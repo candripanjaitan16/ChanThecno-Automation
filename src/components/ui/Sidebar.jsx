@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Wallet,
@@ -14,18 +14,25 @@ import {
 } from "lucide-react";
 
 import LogoChanThecno from "../../assets/chanthecno.svg";
+import { useAuth } from "../../lib/auth";
 
 export default function Sidebar() {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
 
-  // Data profil sementara
-  // Nanti data ini akan diambil dari akun/backend
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
   const profile = {
-    name: "Alex Doe",
-    email: "alex@example.com",
+    name: user?.name || "Pengguna",
+    email: user?.email || "",
     photo: null,
   };
+
+  async function handleLogout() {
+    await logout();
+    navigate("/login", { replace: true });
+  }
 
   const menuItems = [
     {
@@ -186,6 +193,7 @@ export default function Sidebar() {
           {/* Logout */}
           <button
             type="button"
+            onClick={handleLogout}
             className="flex w-full items-center space-x-3 rounded-xl px-4 py-3 text-sm font-medium text-rose-600 transition-all hover:bg-rose-50"
           >
             <LogOut size={20} className="text-rose-500" />

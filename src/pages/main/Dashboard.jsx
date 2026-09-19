@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import { History } from "lucide-react";
 import { Link } from "react-router-dom";
 import Sidebar from "../../components/ui/Sidebar";
-
-const API_URL = "https://chanthecno.co-id.id/api";
+import { api } from "../../lib/api";
 
 const TYPE_LABEL = {
   bonus: "Bonus",
@@ -28,27 +27,6 @@ function formatDate(value) {
   });
 }
 
-async function apiGet(path) {
-  // credentials: "include" WAJIB agar cookie session ikut terkirim
-  const response = await fetch(`${API_URL}${path}`, {
-    credentials: "include",
-  });
-
-  if (response.status === 401) {
-    const error = new Error("Belum login.");
-    error.code = 401;
-    throw error;
-  }
-
-  const data = await response.json();
-
-  if (!response.ok || !data.success) {
-    throw new Error(data.message || "Terjadi kesalahan.");
-  }
-
-  return data;
-}
-
 export default function Dashboard() {
   const [balance, setBalance] = useState(0);
   const [history, setHistory] = useState([]);
@@ -64,8 +42,8 @@ export default function Dashboard() {
         setError("");
 
         const [balanceData, txData] = await Promise.all([
-          apiGet("/credits/balance.php"),
-          apiGet("/credits/transactions.php?limit=20"),
+          api("/credits/balance.php"),
+          api("/credits/transactions.php?limit=20"),
         ]);
 
         if (cancelled) return;
@@ -84,7 +62,7 @@ export default function Dashboard() {
       } catch (err) {
         if (cancelled) return;
 
-        if (err.code === 401) {
+        if (err.status === 401) {
           // Halaman login belum ada di App.jsx, jadi sementara hanya pesan.
           // Nanti ganti dengan: navigate("/login")
           setError("Kamu belum login. Silakan login terlebih dahulu.");
