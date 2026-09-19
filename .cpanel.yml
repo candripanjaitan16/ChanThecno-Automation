@@ -1,0 +1,10 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/u70fhug4/public_html/
+    - export NPM=$(command -v npm || true)
+    - if [ -z "$NPM" ]; then echo "ERROR: npm tidak ditemukan di server cPanel"; exit 1; fi
+    - $NPM ci
+    - $NPM run build
+    - /bin/cp -R dist/. $DEPLOYPATH
+    - /bin/cp -R api/. $DEPLOYPATH/api/
