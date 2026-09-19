@@ -1,8 +1,14 @@
-import { useEffect, useState } from "react";
-import { Wallet, Zap, CheckCircle2, History, CreditCard } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Wallet,
+  Zap,
+  CheckCircle2,
+  History,
+  CreditCard,
+  Loader2,
+} from "lucide-react";
 import Sidebar from "../../components/ui/Sidebar";
-
-const API_URL = "https://chanthecno.co-id.id/api";
+import { api } from "../../lib/api";
 
 function formatRupiah(value) {
   return Number(value).toLocaleString("id-ID", {
@@ -12,74 +18,245 @@ function formatRupiah(value) {
   });
 }
 
+function formatDate(value) {
+  const date = new Date(String(value).replace(" ", "T"));
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString("id-ID", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+const STATUS_STYLE = {
+  paid: { label: "Berhasil", className: "bg-emerald-50 text-emerald-600" },
+  pending: { label: "Menunggu", className: "bg-amber-50 text-amber-600" },
+  failed: { label: "Gagal", className: "bg-red-50 text-red-600" },
+  expired: { label: "Kedaluwarsa", className: "bg-slate-100 text-slate-500" },
+  canceled: { label: "Dibatalkan", className: "bg-slate-100 text-slate-500" },
+};
+
+/** Muat snap.js sekali saja. URL & client key datang dari backend. */
+function loadSnap(src, clientKey) {
+  return new Promise((resolve, reject) => {
+    if (window.snap) return resolve(window.snap);
+
+    const existing = document.querySelector("script[data-snap]");
+    if (existing) {
+      existing.addEventListener("load", () => resolve(window.snap));
+      existing.addEventListener("error", reject);
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.dataset.snap = "1";
+    script.setAttribute("data-client-key", clientKey);
+    script.onload = () => resolve(window.snap);
+    script.onerror = () => reject(new Error("Gagal memuat halaman pembayaran."));
+    document.body.appendChild(script);
+  });
+}
+
 export default function KelolaKredit() {
   const [creditBalance, setCreditBalance] = useState(0);
   const [packages, setPackages] = useState([]);
   const [selectedPackage, setSelectedPackage] = useState(null);
+  const [orders, setOrders] = useState([]);
 
   const [loadingPackages, setLoadingPackages] = useState(true);
   const [packageError, setPackageError] = useState("");
 
-  const [topupHistory, setTopupHistory] = useState([]);
+  const [paying, setPaying] = useState(false);
+  const [notice, setNotice] = useState(null); // { type: "success" | "error" | "info", text }
 
+  const pollRef = useRef(null);
+
+  const refreshAccount = useCallback(async () => {
+    const [balanceData, orderData] = await Promise.all([
+      api("/credits/balance.php"),
+      api("/credits/orders.php"),
+    ]);
+
+    setCreditBalance(Number(balanceData.balance));
+    setOrders(orderData.orders);
+  }, []);
+
+  // Muat paket + saldo + riwayat
   useEffect(() => {
-    async function loadPackages() {
+    let cancelled = false;
+
+    async function load() {
       try {
         setLoadingPackages(true);
         setPackageError("");
 
-        const response = await fetch(`${API_URL}/credits/packages.php`);
+        const [pkgData] = await Promise.all([
+          api("/credits/packages.php"),
+          refreshAccount(),
+        ]);
 
-        if (!response.ok) {
-          throw new Error("Gagal mengambil paket kredit.");
-        }
+        if (cancelled) return;
 
-        const data = await response.json();
-
-        if (!data.success || !Array.isArray(data.packages)) {
-          throw new Error("Data paket kredit tidak valid.");
-        }
-
-        const normalizedPackages = data.packages.map((pkg) => ({
+        const normalized = pkgData.packages.map((pkg) => ({
           id: String(pkg.id),
           name: pkg.name,
           credit: Number(pkg.credits),
           price: Number(pkg.price),
           badge: pkg.badge,
           description: pkg.description,
-          sortOrder: Number(pkg.sort_order),
         }));
 
-        setPackages(normalizedPackages);
+        setPackages(normalized);
 
-        // Pilih paket Popular jika tersedia.
-        // Kalau tidak ada, pilih paket pertama.
-        const popularPackage = normalizedPackages.find(
+        const popular = normalized.find(
           (pkg) => pkg.name.toLowerCase() === "popular",
         );
 
-        setSelectedPackage(
-          popularPackage?.id || normalizedPackages[0]?.id || null,
-        );
+        setSelectedPackage(popular?.id || normalized[0]?.id || null);
       } catch (error) {
-        console.error("Gagal mengambil paket:", error);
+        if (cancelled) return;
+        console.error("Gagal memuat Kelola Kredit:", error);
         setPackageError("Gagal mengambil paket kredit. Silakan coba lagi.");
       } finally {
-        setLoadingPackages(false);
+        if (!cancelled) setLoadingPackages(false);
       }
     }
 
-    loadPackages();
-  }, []);
+    load();
+
+    return () => {
+      cancelled = true;
+      clearInterval(pollRef.current);
+    };
+  }, [refreshAccount]);
 
   const activePackage = packages.find((pkg) => pkg.id === selectedPackage);
 
-  function handleTopUp() {
-    if (!activePackage) return;
+  /**
+   * Setelah popup ditutup / selesai, tanya backend status order.
+   * Backend memverifikasi ke Midtrans, jadi ini juga jaring pengaman
+   * bila notifikasi webhook terlambat.
+   */
+  const checkOrder = useCallback(
+    async (orderId, { silent = false } = {}) => {
+      try {
+        const { order } = await api(
+          `/credits/order-status.php?order_id=${encodeURIComponent(orderId)}`,
+        );
 
-    // Sistem order/pembayaran akan dibuat pada tahap berikutnya.
-    console.log("Paket dipilih:", activePackage);
+        if (order.status === "paid") {
+          clearInterval(pollRef.current);
+          await refreshAccount();
+          setNotice({
+            type: "success",
+            text: `Pembayaran berhasil! ${order.credits.toLocaleString("id-ID")} kredit sudah ditambahkan.`,
+          });
+          return "paid";
+        }
+
+        if (["failed", "expired", "canceled"].includes(order.status)) {
+          clearInterval(pollRef.current);
+          await refreshAccount();
+          setNotice({ type: "error", text: "Pembayaran tidak berhasil atau sudah kedaluwarsa." });
+          return order.status;
+        }
+
+        if (!silent) {
+          setNotice({
+            type: "info",
+            text: "Menunggu pembayaran kamu. Kredit otomatis masuk setelah pembayaran terkonfirmasi.",
+          });
+        }
+        return "pending";
+      } catch (error) {
+        console.error("Gagal cek order:", error);
+        return "error";
+      }
+    },
+    [refreshAccount],
+  );
+
+  /** Cek berkala (maks ~2 menit) untuk metode seperti transfer bank / QRIS. */
+  const startPolling = useCallback(
+    (orderId) => {
+      clearInterval(pollRef.current);
+      let tries = 0;
+
+      pollRef.current = setInterval(async () => {
+        tries += 1;
+        const result = await checkOrder(orderId, { silent: true });
+
+        if (result !== "pending" && result !== "error") {
+          clearInterval(pollRef.current);
+        } else if (tries >= 24) {
+          clearInterval(pollRef.current);
+        }
+      }, 5000);
+    },
+    [checkOrder],
+  );
+
+  async function handleTopUp() {
+    if (!activePackage || paying) return;
+
+    setNotice(null);
+    setPaying(true);
+
+    try {
+      // Hanya kirim ID paket. Harga & jumlah kredit ditentukan server.
+      const data = await api("/credits/topup.php", {
+        method: "POST",
+        body: { package_id: Number(activePackage.id) },
+      });
+
+      const snap = await loadSnap(data.snap_js, data.client_key);
+
+      // Pesanan baru tercatat "Menunggu" di riwayat
+      refreshAccount().catch(() => {});
+
+      snap.pay(data.snap_token, {
+        onSuccess: () => {
+          checkOrder(data.order_id);
+        },
+        onPending: () => {
+          setNotice({
+            type: "info",
+            text: "Menunggu pembayaran kamu. Kredit otomatis masuk setelah pembayaran terkonfirmasi.",
+          });
+          startPolling(data.order_id);
+        },
+        onError: () => {
+          setNotice({ type: "error", text: "Pembayaran gagal. Silakan coba lagi." });
+          refreshAccount().catch(() => {});
+        },
+        onClose: () => {
+          // Popup ditutup: cek sekali, siapa tahu sudah dibayar
+          checkOrder(data.order_id).then((r) => {
+            if (r === "pending") startPolling(data.order_id);
+          });
+        },
+      });
+    } catch (error) {
+      console.error("Top up gagal:", error);
+      setNotice({
+        type: "error",
+        text: error.message || "Gagal memulai pembayaran.",
+      });
+    } finally {
+      setPaying(false);
+    }
   }
+
+  const noticeStyle = {
+    success: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    error: "border-red-200 bg-red-50 text-red-700",
+    info: "border-blue-200 bg-blue-50 text-blue-700",
+  };
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -96,6 +273,14 @@ export default function KelolaKredit() {
               Top up kredit dan lihat riwayat pembelian kamu.
             </p>
           </div>
+
+          {notice && (
+            <div
+              className={`mb-6 rounded-xl border px-4 py-3 text-sm ${noticeStyle[notice.type]}`}
+            >
+              {notice.text}
+            </div>
+          )}
 
           {/* Saldo Kredit */}
           <div className="mb-8 flex items-center justify-between overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 to-blue-500 p-6 text-white shadow-sm">
@@ -215,10 +400,11 @@ export default function KelolaKredit() {
 
             <button
               onClick={handleTopUp}
-              disabled={!activePackage || loadingPackages}
-              className="w-full rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-md shadow-blue-500/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+              disabled={!activePackage || loadingPackages || paying}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-md shadow-blue-500/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
             >
-              Top Up Sekarang
+              {paying && <Loader2 size={16} className="animate-spin" />}
+              {paying ? "Memproses..." : "Top Up Sekarang"}
             </button>
           </div>
 
@@ -233,7 +419,7 @@ export default function KelolaKredit() {
             </div>
 
             <div className="min-h-[250px]">
-              {topupHistory.length === 0 ? (
+              {orders.length === 0 ? (
                 <div className="flex min-h-[250px] items-center justify-center px-6">
                   <p className="text-sm text-slate-400">
                     Belum ada riwayat top up.
@@ -241,32 +427,50 @@ export default function KelolaKredit() {
                 </div>
               ) : (
                 <div className="divide-y divide-slate-100">
-                  {topupHistory.map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between px-6 py-4"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-slate-800">
-                          Paket {item.package}
-                        </p>
+                  {orders.map((item) => {
+                    const st = STATUS_STYLE[item.status] || STATUS_STYLE.pending;
 
-                        <p className="mt-0.5 text-xs text-slate-400">
-                          {item.date}
-                        </p>
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between px-6 py-4"
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">
+                            Paket {item.package}
+                          </p>
+
+                          <p className="mt-0.5 text-xs text-slate-400">
+                            {formatDate(item.date)}
+                          </p>
+                        </div>
+
+                        <div className="text-right">
+                          <p
+                            className={`text-sm font-semibold ${
+                              item.status === "paid"
+                                ? "text-emerald-600"
+                                : "text-slate-400"
+                            }`}
+                          >
+                            +{item.credit.toLocaleString("id-ID")} kredit
+                          </p>
+
+                          <div className="mt-0.5 flex items-center justify-end gap-2">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${st.className}`}
+                            >
+                              {st.label}
+                            </span>
+
+                            <span className="text-xs text-slate-400">
+                              {formatRupiah(item.price)}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-
-                      <div className="text-right">
-                        <p className="text-sm font-semibold text-emerald-600">
-                          +{item.credit.toLocaleString("id-ID")} kredit
-                        </p>
-
-                        <p className="mt-0.5 text-xs text-slate-400">
-                          {formatRupiah(item.price)}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
