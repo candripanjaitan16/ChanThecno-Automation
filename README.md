@@ -1,35 +1,117 @@
-membuat dashboard, untuk halaman user dan admin.
+users
+├── id
+├── name
+├── email
+├── password_hash
+├── phone
+├── profile_image
+├── created_at
+└── updated_at
 
-admin:
-Memiliki menu
+credit_balances
+├── id
+├── user_id
+├── balance
+└── updated_at
 
-1. Untuk halaman Dahsboard dengan halaman untuk menampilkan user aktif, harga kredit, kemampuan ai.
-2. Untuk halaman mengatur apikey midtrans, ai, model [lebih dari 1], endpoint [lebih dari 1], pembuatan untuk plan "free/pro", dan pro dan mengatur kredit dan mengatur nama "free", harga, model, pembatasan kredit.
-3. Untuk mengatur halaman server, database kemana di simpan yang semuanya terkunci "Hanya mengatur halaman untuk database 100% di atur disini dan disimpan ke vps".
-4. Mengatur untuk mengisi supaya bisa login google. "100% saya kelolah dari sini".
+credit_transactions
+├── id
+├── user_id
+├── type
+├── amount
+├── balance_before
+├── balance_after
+├── description
+├── reference
+└── created_at
 
-User:
-Memiliki menu
+credit_packages
+├── id
+├── name
+├── credits
+├── price
+├── badge
+├── active
+└── created_at
 
-1. Halaman ke dahshboard wajib login dengan google scret yang di isi di admin.
-2. Halaman dahsboard yang menampilkan halaman yang berisi total kredit, history pemakaian.
-3. Halaman akun yang mengatur nama toko, pemilik, nomor admin, dan halaman untuk toppup kredit yang di bayar ke api key midtrans yang menjadi tempat pembayaran.
+topup_orders
+├── id
+├── user_id
+├── package_id
+├── amount
+├── credits
+├── payment_status
+├── payment_reference
+└── created_at
 
-src/
-├── components/ # Komponen global (Button, Input, dll)
-│ ├── ui/
-│ └── admin/ # Komponen khusus admin (SidebarAdmin, NavbarAdmin)
-├── layouts/ # Layout halaman
-│ ├── AdminLayout.jsx # Layout dengan Sidebar + Header khusus Admin
-│ └── GuestLayout.jsx # Layout untuk halaman umum / login
-├── pages/ # Semua halaman aplikasi
-│ ├── auth/ # Halaman Login / Register
-│ │ └── Login.jsx
-│ ├── admin/ # TEMPAT HALAMAN ADMIN DI SINI
-│ │ ├── Dashboard.jsx
-│ │ ├── Users.jsx
-│ │ └── Products.jsx
-│ └── main/ # Halaman utama user biasa (Home, About)
-│ └── Home.jsx
-├── App.jsx # Pengaturan Routing (React Router)
-└── main.jsx
+ai_tasks
+├── id
+├── user_id
+├── name
+├── system_prompt
+├── additional_rule
+├── whatsapp_number
+├── stop_reply
+├── active
+├── created_at
+└── updated_at
+
+ai_products
+├── id
+├── ai_task_id
+├── name
+├── description
+├── price
+├── stock
+├── code
+├── sort_order
+└── created_at
+
+notification_settings
+├── id
+├── user_id
+├── email_enabled
+├── whatsapp_enabled
+├── task_enabled
+└── updated_at
+
+whatsapp_sessions
+├── id
+├── user_id
+├── phone_number
+├── session_status
+├── qr_data
+├── connected_at
+└── updated_at
+
+
+ChanThecno-Automation/
+│
+├── src/
+├── public/
+├── package.json
+│
+└── api/
+    ├── config/
+    │   └── database.php
+    │
+    ├── auth/
+    │   ├── register.php
+    │   ├── login.php
+    │   └── logout.php
+    │
+    ├── user/
+    │   └── profile.php
+    │
+    ├── credits/
+    │   ├── balance.php
+    │   ├── packages.php
+    │   ├── transactions.php
+    │   └── topup.php
+    │
+    ├── ai/
+    │   ├── tasks.php
+    │   └── products.php
+    │
+    └── whatsapp/
+        └── session.php

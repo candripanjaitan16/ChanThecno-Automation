@@ -1,11 +1,109 @@
+import { useEffect, useState } from "react";
 import { History } from "lucide-react";
 import { Link } from "react-router-dom";
 import Sidebar from "../../components/ui/Sidebar";
 
-const CREDIT_TOTAL = 0;
-const HISTORY = [];
+const API_URL = "https://chanthecno.co-id.id/api";
+
+const TYPE_LABEL = {
+  bonus: "Bonus",
+  topup: "Top Up",
+  usage: "Pemakaian",
+  refund: "Refund",
+  adjustment: "Penyesuaian",
+};
+
+function formatDate(value) {
+  // MySQL: "2026-09-19 01:14:09" -> Date valid di semua browser
+  const date = new Date(String(value).replace(" ", "T"));
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString("id-ID", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+async function apiGet(path) {
+  // credentials: "include" WAJIB agar cookie session ikut terkirim
+  const response = await fetch(`${API_URL}${path}`, {
+    credentials: "include",
+  });
+
+  if (response.status === 401) {
+    const error = new Error("Belum login.");
+    error.code = 401;
+    throw error;
+  }
+
+  const data = await response.json();
+
+  if (!response.ok || !data.success) {
+    throw new Error(data.message || "Terjadi kesalahan.");
+  }
+
+  return data;
+}
 
 export default function Dashboard() {
+  const [balance, setBalance] = useState(0);
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadDashboard() {
+      try {
+        setLoading(true);
+        setError("");
+
+        const [balanceData, txData] = await Promise.all([
+          apiGet("/credits/balance.php"),
+          apiGet("/credits/transactions.php?limit=20"),
+        ]);
+
+        if (cancelled) return;
+
+        setBalance(Number(balanceData.balance));
+
+        setHistory(
+          txData.transactions.map((tx) => ({
+            id: tx.id,
+            label: tx.label || TYPE_LABEL[tx.type] || "Transaksi",
+            type: tx.type,
+            amount: Number(tx.amount),
+            date: formatDate(tx.date),
+          })),
+        );
+      } catch (err) {
+        if (cancelled) return;
+
+        if (err.code === 401) {
+          // Halaman login belum ada di App.jsx, jadi sementara hanya pesan.
+          // Nanti ganti dengan: navigate("/login")
+          setError("Kamu belum login. Silakan login terlebih dahulu.");
+        } else {
+          console.error("Gagal memuat dashboard:", err);
+          setError("Gagal memuat data kredit. Silakan coba lagi.");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadDashboard();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
@@ -20,6 +118,12 @@ export default function Dashboard() {
             </p>
           </div>
 
+          {error && (
+            <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
           <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -28,7 +132,11 @@ export default function Dashboard() {
                 </p>
 
                 <p className="mt-2 text-4xl font-bold tracking-tight text-slate-900">
-                  {CREDIT_TOTAL.toLocaleString("id-ID")}
+                  {loading ? (
+                    <span className="inline-block h-10 w-24 animate-pulse rounded-lg bg-slate-100 align-middle" />
+                  ) : (
+                    balance.toLocaleString("id-ID")
+                  )}
                 </p>
 
                 <p className="mt-1 text-sm text-slate-500">Kredit Tersisa</p>
@@ -53,7 +161,22 @@ export default function Dashboard() {
             </div>
 
             <div className="min-h-[420px]">
-              {HISTORY.length === 0 ? (
+              {loading ? (
+                <div className="divide-y divide-slate-100">
+                  {[1, 2, 3, 4].map((n) => (
+                    <div
+                      key={n}
+                      className="flex items-center justify-between px-6 py-4"
+                    >
+                      <div className="space-y-2">
+                        <div className="h-4 w-48 animate-pulse rounded bg-slate-100" />
+                        <div className="h-3 w-28 animate-pulse rounded bg-slate-100" />
+                      </div>
+                      <div className="h-4 w-12 animate-pulse rounded bg-slate-100" />
+                    </div>
+                  ))}
+                </div>
+              ) : history.length === 0 ? (
                 <div className="flex min-h-[420px] items-center justify-center px-6">
                   <p className="text-sm text-slate-400">
                     Belum ada riwayat kredit.
@@ -61,7 +184,7 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <div className="divide-y divide-slate-100">
-                  {HISTORY.map((item) => (
+                  {history.map((item) => (
                     <div
                       key={item.id}
                       className="flex items-center justify-between px-6 py-4"
@@ -72,7 +195,7 @@ export default function Dashboard() {
                         </p>
 
                         <p className="mt-0.5 text-xs text-slate-400">
-                          {item.date}
+                          {TYPE_LABEL[item.type] ?? item.type} · {item.date}
                         </p>
                       </div>
 
