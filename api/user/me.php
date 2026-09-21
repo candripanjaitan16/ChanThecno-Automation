@@ -10,13 +10,14 @@ require_once __DIR__ . '/../config/database.php';
 $userId = requireAuth();
 
 try {
-    $stmt = $pdo->prepare("
-        SELECT id, name, email
-        FROM users
-        WHERE id = ?
-        LIMIT 1
-    ");
-    $stmt->execute([$userId]);
+    // is_admin dibaca dengan aman: jika kolom belum ada (SQL belum dijalankan) dianggap 0
+    try {
+        $stmt = $pdo->prepare("SELECT id, name, email, is_admin FROM users WHERE id = ? LIMIT 1");
+        $stmt->execute([$userId]);
+    } catch (PDOException $e) {
+        $stmt = $pdo->prepare("SELECT id, name, email, 0 AS is_admin FROM users WHERE id = ? LIMIT 1");
+        $stmt->execute([$userId]);
+    }
     $user = $stmt->fetch();
 
     if (!$user) {
@@ -26,9 +27,10 @@ try {
     jsonResponse([
         'success' => true,
         'user' => [
-            'id'    => (int)$user['id'],
-            'name'  => $user['name'],
-            'email' => $user['email'],
+            'id'       => (int)$user['id'],
+            'name'     => $user['name'],
+            'email'    => $user['email'],
+            'is_admin' => (int)$user['is_admin'] === 1,
         ],
     ]);
 

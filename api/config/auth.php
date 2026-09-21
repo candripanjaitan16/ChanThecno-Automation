@@ -80,3 +80,23 @@ function requireAuth(): int
 
     return $userId;
 }
+
+
+/**
+ * Wajib admin. Penanda admin (users.is_admin) hanya bisa diisi manual lewat
+ * database, tidak ada endpoint yang dapat menjadikan seseorang admin.
+ * Pengguna biasa mendapat 403.
+ */
+function requireAdmin(PDO $pdo): int
+{
+    $userId = requireAuth();
+
+    $stmt = $pdo->prepare("SELECT is_admin FROM users WHERE id = ? LIMIT 1");
+    $stmt->execute([$userId]);
+
+    if ((int)$stmt->fetchColumn() !== 1) {
+        jsonResponse(['success' => false, 'message' => 'Akses ditolak.'], 403);
+    }
+
+    return $userId;
+}

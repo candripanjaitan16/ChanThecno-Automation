@@ -5,6 +5,7 @@ import {
   Wallet,
   History,
   Settings,
+  Cpu,
   LogOut,
   Menu,
   X,
@@ -70,6 +71,16 @@ export default function Sidebar() {
       text: "Pengaturan",
       path: "/pengaturan",
     },
+    // Hanya tampil untuk admin. (Keamanan sebenarnya ada di server.)
+    ...(user?.is_admin
+      ? [
+          {
+            icon: <Cpu size={20} />,
+            text: "Pengaturan AI",
+            path: "/admin/ai",
+          },
+        ]
+      : []),
   ];
 
   return (

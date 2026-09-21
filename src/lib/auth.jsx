@@ -1,4 +1,10 @@
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import { api } from "./api";
 
 const AuthContext = createContext(null);
@@ -22,11 +28,15 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = useCallback(async (email, password) => {
-    const data = await api("/auth/login.php", {
+    await api("/auth/login.php", {
       method: "POST",
       body: { email, password },
     });
-    setUser(data.user);
+
+    // login.php hanya mengembalikan data dasar. Ambil profil lengkap (termasuk
+    // is_admin) agar menu admin langsung muncul tanpa perlu refresh halaman.
+    const me = await api("/user/me.php");
+    setUser(me.user);
   }, []);
 
   const logout = useCallback(async () => {

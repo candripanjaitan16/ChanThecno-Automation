@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./lib/auth";
 import ProtectedRoute from "./components/ProtectedRoute";
+import AdminRoute from "./components/AdminRoute";
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
 import Dashboard from "./pages/main/Dashboard";
@@ -10,6 +11,7 @@ import TugasAI from "./pages/main/TugasAi";
 import Pengaturan from "./pages/main/Pengaturan";
 import TestChat from "./pages/main/TestChat";
 import QrWhatsapp from "./pages/main/QrWhatsapp";
+import AdminAi from "./pages/admin/AdminAi";
 
 function App() {
   return (
@@ -29,6 +31,11 @@ function App() {
             <Route path="/pengaturan" element={<Pengaturan />} />
             <Route path="/test-chat" element={<TestChat />} />
             <Route path="/qr-whatsapp" element={<QrWhatsapp />} />
+
+            {/* Khusus admin (tampilan saja; server tetap memeriksa 403) */}
+            <Route element={<AdminRoute />}>
+              <Route path="/admin/ai" element={<AdminAi />} />
+            </Route>
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
